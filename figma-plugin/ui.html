@@ -1,0 +1,156 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Template Automation</title>
+  <style>
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
+      margin: 16px;
+      color: #333;
+    }
+    h2 {
+      margin-top: 0;
+      font-size: 18px;
+      font-weight: 600;
+    }
+    label {
+      display: block;
+      margin-top: 12px;
+      font-size: 12px;
+      font-weight: 500;
+      color: #666;
+    }
+    input, textarea {
+      width: 100%;
+      padding: 8px;
+      margin-top: 4px;
+      border: 1px solid #ddd;
+      border-radius: 4px;
+      font-size: 12px;
+      box-sizing: border-box;
+    }
+    textarea {
+      min-height: 100px;
+      font-family: monospace;
+    }
+    button {
+      width: 100%;
+      padding: 10px;
+      margin-top: 16px;
+      border: none;
+      border-radius: 4px;
+      font-size: 13px;
+      font-weight: 600;
+      cursor: pointer;
+      transition: background-color 0.2s;
+    }
+    button.primary {
+      background-color: #0066ff;
+      color: white;
+    }
+    button.primary:hover {
+      background-color: #0052cc;
+    }
+    button.secondary {
+      background-color: #f0f0f0;
+      color: #333;
+    }
+    button.secondary:hover {
+      background-color: #e0e0e0;
+    }
+    .status {
+      margin-top: 12px;
+      padding: 8px;
+      border-radius: 4px;
+      font-size: 12px;
+    }
+    .status.success {
+      background-color: #e7f5e7;
+      color: #2d7a2d;
+    }
+    .status.error {
+      background-color: #ffe7e7;
+      color: #c42929;
+    }
+  </style>
+</head>
+<body>
+  <h2>Template Automation</h2>
+
+  <label for="jobId">Job ID:</label>
+  <input type="text" id="jobId" placeholder="job_123" />
+
+  <label for="fields">Fields (JSON):</label>
+  <textarea id="fields" placeholder='{"HEAD_TITLE": "Your Title"}'></textarea>
+
+  <label for="colors">Colors (JSON):</label>
+  <textarea id="colors" placeholder='{"HEAD_TITLE": {"fill": "#000000"}}'></textarea>
+
+  <button class="primary" id="apply">Apply Template</button>
+  <button class="secondary" id="export">Export (PNG)</button>
+  <button class="secondary" id="cancel">Cancel</button>
+
+  <div id="status"></div>
+
+  <script>
+    document.getElementById('apply').onclick = () => {
+      const jobId = document.getElementById('jobId').value;
+      const fieldsText = document.getElementById('fields').value;
+      const colorsText = document.getElementById('colors').value;
+
+      try {
+        const fields = fieldsText ? JSON.parse(fieldsText) : null;
+        const colors = colorsText ? JSON.parse(colorsText) : null;
+
+        parent.postMessage({
+          pluginMessage: {
+            type: 'apply-template',
+            jobId,
+            fields,
+            colors
+          }
+        }, '*');
+
+        showStatus('Applying template...', false);
+      } catch (error) {
+        showStatus('Invalid JSON: ' + error.message, true);
+      }
+    };
+
+    document.getElementById('export').onclick = () => {
+      parent.postMessage({
+        pluginMessage: {
+          type: 'export-template',
+          format: 'png',
+          scale: 2
+        }
+      }, '*');
+      showStatus('Exporting...', false);
+    };
+
+    document.getElementById('cancel').onclick = () => {
+      parent.postMessage({ pluginMessage: { type: 'cancel' } }, '*');
+    };
+
+    function showStatus(message, isError) {
+      const status = document.getElementById('status');
+      status.textContent = message;
+      status.className = 'status ' + (isError ? 'error' : 'success');
+    }
+
+    onmessage = (event) => {
+      const msg = event.data.pluginMessage;
+      if (msg.type === 'apply-success') {
+        showStatus('Template applied successfully!', false);
+      } else if (msg.type === 'apply-error') {
+        showStatus('Error: ' + msg.error, true);
+      } else if (msg.type === 'export-success') {
+        showStatus('Exported successfully!', false);
+      } else if (msg.type === 'export-error') {
+        showStatus('Export error: ' + msg.error, true);
+      }
+    };
+  </script>
+</body>
+</html>

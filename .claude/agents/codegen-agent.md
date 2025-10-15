@@ -14,11 +14,15 @@ GitHub Issueの内容を解析し、Claude Sonnet 4 APIを使用して必要な�
 ## 責任範囲
 
 - Issue内容の理解と要件抽出
-- TypeScriptコード自動生成（Strict mode準拠）
-- ユニットテスト自動生成（Vitest）
+- **マルチスタックコード自動生成**:
+  - TypeScript (Strict mode準拠、BaseAgentパターン)
+  - Python (Flask API、型ヒント、docstring)
+  - React (Vite, TypeScript, Tailwind CSS)
+  - Figma Plugin (TypeScript, Figma API)
+- ユニットテスト自動生成（Vitest, pytest）
 - 型定義の追加
-- JSDocコメントの生成
-- BaseAgentパターンに従った実装
+- JSDocコメント/docstringの生成
+- プロジェクト構造の自動生成（backend/, frontend/, figma-plugin/）
 
 ## 実行権限
 
@@ -32,10 +36,33 @@ GitHub Issueの内容を解析し、Claude Sonnet 4 APIを使用して必要な�
 - **API**: Anthropic SDK
 
 ### 生成対象
-- **言語**: TypeScript（Strict mode）
+
+#### TypeScript/Node.js
+- **言語**: TypeScript (Strict mode)
 - **フレームワーク**: BaseAgentパターン
 - **テスト**: Vitest
 - **ドキュメント**: JSDoc + README
+
+#### Python/Flask
+- **言語**: Python 3.10+
+- **フレームワーク**: Flask, Flask-JWT-Extended, Flask-CORS
+- **テスト**: pytest
+- **ドキュメント**: docstring + README
+- **構造**: backend/app.py, backend/api/, backend/services/
+
+#### React/Frontend
+- **言語**: TypeScript
+- **フレームワーク**: React 18+, Vite, Tailwind CSS
+- **テスト**: Vitest + React Testing Library
+- **ドキュメント**: JSDoc + README
+- **構造**: frontend/src/pages/, frontend/src/components/
+
+#### Figma Plugin
+- **言語**: TypeScript
+- **API**: Figma Plugin API
+- **ビルド**: esbuild
+- **ドキュメント**: README
+- **構造**: figma-plugin/code.ts, figma-plugin/ui.html, figma-plugin/manifest.json
 
 ## 成功条件
 
@@ -152,6 +179,116 @@ Issueに `🤖agent-execute` ラベルを追加すると自動実行されます
 - **ReviewAgent**: 生成コードの品質検証
 - **CoordinatorAgent**: タスク分解とAgent割り当て
 - **PRAgent**: Pull Request自動作成
+
+---
+
+## マルチスタックプロジェクト対応
+
+### プロジェクト構造検出
+
+Issueの内容から以下のキーワードを検出し、適切なスタックを判定:
+
+| キーワード | スタック | 生成ファイル |
+|-----------|---------|-------------|
+| Flask, Python, API, backend | Python/Flask | backend/app.py, backend/api/, backend/requirements.txt |
+| React, frontend, UI, Vite | React/Vite | frontend/src/, frontend/package.json |
+| Figma, plugin, template | Figma Plugin | figma-plugin/code.ts, figma-plugin/manifest.json |
+| TypeScript, Agent | TypeScript/Node | src/, tests/ |
+
+### Flask API生成例
+
+**タスク**: "Flask APIスケルトン実装"
+
+**生成ファイル**:
+```
+backend/
+├── app.py                 # Flask アプリケーションエントリポイント
+├── requirements.txt       # 依存パッケージ
+├── api/
+│   ├── __init__.py
+│   ├── auth.py           # 認証エンドポイント
+│   └── templates.py      # テンプレートエンドポイント
+└── services/
+    ├── __init__.py
+    └── sheets.py         # Google Sheets連携
+```
+
+**app.py テンプレート**:
+```python
+"""
+Flask API Application
+"""
+from flask import Flask
+from flask_cors import CORS
+from flask_jwt_extended import JWTManager
+from api import auth, templates
+
+app = Flask(__name__)
+app.config['JWT_SECRET_KEY'] = os.getenv('JWT_SECRET')
+CORS(app)
+jwt = JWTManager(app)
+
+# Register blueprints
+app.register_blueprint(auth.bp, url_prefix='/api/v1/auth')
+app.register_blueprint(templates.bp, url_prefix='/api/v1/templates')
+
+if __name__ == '__main__':
+    app.run(debug=True)
+```
+
+### React UI生成例
+
+**タスク**: "テンプレ一覧ページ実装"
+
+**生成ファイル**:
+```
+frontend/
+├── package.json
+├── vite.config.ts
+├── tsconfig.json
+├── tailwind.config.js
+├── index.html
+└── src/
+    ├── main.tsx
+    ├── App.tsx
+    ├── pages/
+    │   └── Templates.tsx
+    └── components/
+        └── TemplateCard.tsx
+```
+
+### Figma Plugin生成例
+
+**タスク**: "Figmaプラグイン基本構造実装"
+
+**生成ファイル**:
+```
+figma-plugin/
+├── manifest.json
+├── code.ts              # プラグインロジック
+├── ui.html              # プラグインUI
+└── package.json
+```
+
+### 実装判定ロジック
+
+1. **Issue本文を解析**
+   - チェックボックスタスクを抽出
+   - キーワードマッチング
+
+2. **スタック判定**
+   - Flask: "backend", "API", "Flask", "Python"
+   - React: "frontend", "UI", "React", "Vite"
+   - Figma: "figma-plugin", "plugin", "Figma"
+
+3. **ファイル生成**
+   - 検出されたスタックに応じてテンプレートを使用
+   - 必要な依存関係ファイル (requirements.txt, package.json) を生成
+   - 基本的なディレクトリ構造を作成
+
+4. **コード生成**
+   - Claude Sonnet 4 APIを使用して実装コードを生成
+   - スタック固有のベストプラクティスに従う
 
 ---
 
