@@ -3,7 +3,65 @@
 
 figma.showUI(__html__, { width: 400, height: 600 });
 
+// Helper: Convert hex color to RGB (0-1 range)
+function hexToRgb(hex: string): { r: number; g: number; b: number } {
+  const clean = hex.replace('#', '');
+  const r = parseInt(clean.substr(0, 2), 16) / 255;
+  const g = parseInt(clean.substr(2, 2), 16) / 255;
+  const b = parseInt(clean.substr(4, 2), 16) / 255;
+  return { r, g, b };
+}
+
+// Helper: Find all text nodes in current page
+function findAllTextNodes(): TextNode[] {
+  return figma.currentPage.findAll((n) => n.type === 'TEXT') as TextNode[];
+}
+
+// Helper: Get template information
+function getTemplateInfo() {
+  const selection = figma.currentPage.selection;
+
+  if (selection.length === 0) {
+    return {
+      error: 'Please select a frame or component to analyze'
+    };
+  }
+
+  const node = selection[0];
+  const textNodes: Array<{ name: string; characters: string; fontName: string }> = [];
+
+  // Find all text nodes within the selected node
+  if ('findAll' in node) {
+    const texts = node.findAll((n) => n.type === 'TEXT') as TextNode[];
+
+    for (const text of texts) {
+      textNodes.push({
+        name: text.name,
+        characters: text.characters,
+        fontName: typeof text.fontName === 'object' ? text.fontName.family : 'Mixed'
+      });
+    }
+  }
+
+  return {
+    id: node.id,
+    name: node.name,
+    type: node.type,
+    width: 'width' in node ? node.width : 0,
+    height: 'height' in node ? node.height : 0,
+    textNodes: textNodes
+  };
+}
+
 figma.ui.onmessage = async (msg) => {
+  // Get template information
+  if (msg.type === 'get-template-info') {
+    const info = getTemplateInfo();
+    figma.ui.postMessage({ type: 'template-info', data: info });
+    return;
+  }
+
+  // Apply template changes
   if (msg.type === 'apply-template') {
     const { jobId, fields, colors } = msg;
 
@@ -30,22 +88,14 @@ figma.ui.onmessage = async (msg) => {
 
             // Apply fill color
             if (config.fill && 'fills' in node) {
-              const hex = config.fill.replace('#', '');
-              const r = parseInt(hex.substr(0, 2), 16) / 255;
-              const g = parseInt(hex.substr(2, 2), 16) / 255;
-              const b = parseInt(hex.substr(4, 2), 16) / 255;
-
-              node.fills = [{ type: 'SOLID', color: { r, g, b } }];
+              const rgb = hexToRgb(config.fill);
+              node.fills = [{ type: 'SOLID', color: rgb }];
             }
 
             // Apply stroke color
             if (config.stroke && 'strokes' in node) {
-              const hex = config.stroke.replace('#', '');
-              const r = parseInt(hex.substr(0, 2), 16) / 255;
-              const g = parseInt(hex.substr(2, 2), 16) / 255;
-              const b = parseInt(hex.substr(4, 2), 16) / 255;
-
-              node.strokes = [{ type: 'SOLID', color: { r, g, b } }];
+              const rgb = hexToRgb(config.stroke);
+              node.strokes = [{ type: 'SOLID', color: rgb }];
             }
 
             // Apply stroke width

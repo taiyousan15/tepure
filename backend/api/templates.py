@@ -137,9 +137,17 @@ def create_template():
     {
         "name": "LP-ヒーロー左画像",
         "category": "LP",
-        "figma_file_key": "XXXXX",
-        "preview_url": "https://...",
-        "fields": [...]
+        "figma_file_id": "XXXXX",
+        "figma_node_id": "123:456",
+        "thumbnail_url": "https://...",
+        "fields": [
+            {
+                "field_name": "HEAD_TITLE",
+                "field_type": "text",
+                "default_value": "",
+                "layer_name": "ヘッドライン"
+            }
+        ]
     }
     """
     data = request.get_json()
@@ -152,13 +160,55 @@ def create_template():
             }
         }), 400
 
-    # TODO: Implement actual template creation
-    # For now, return mock response
+    # Validate required fields
+    required_fields = ['name', 'figma_file_id']
+    for field in required_fields:
+        if not data.get(field):
+            return jsonify({
+                'error': {
+                    'code': 'MISSING_FIELD',
+                    'message': f'Missing required field: {field}'
+                }
+            }), 400
 
-    return jsonify({
-        'id': 'tpl_new',
-        'message': 'Template created successfully'
-    }), 201
+    # Create template in Google Sheets
+    try:
+        template_data = {
+            'name': data['name'],
+            'figma_file_id': data['figma_file_id'],
+            'figma_node_id': data.get('figma_node_id', ''),
+            'category': data.get('category', 'uncategorized'),
+            'thumbnail_url': data.get('thumbnail_url', '')
+        }
+
+        template_id = sheets_client.create_template(template_data)
+
+        # Create template fields if provided
+        if 'fields' in data and isinstance(data['fields'], list):
+            # TODO: Implement field creation
+            pass
+
+        # Log template creation
+        current_user = get_jwt_identity()
+        sheets_client.log_audit(
+            actor=current_user,
+            action='template.created',
+            target_id=template_id,
+            metadata={'name': data['name'], 'category': data.get('category', 'uncategorized')}
+        )
+
+        return jsonify({
+            'id': template_id,
+            'message': 'Template created successfully'
+        }), 201
+
+    except Exception as e:
+        return jsonify({
+            'error': {
+                'code': 'CREATION_FAILED',
+                'message': 'Failed to create template'
+            }
+        }), 500
 
 
 @bp.route('/<template_id>/fields', methods=['GET'])
