@@ -3,8 +3,10 @@ Templates API endpoints
 """
 from flask import Blueprint, request, jsonify
 from flask_jwt_extended import jwt_required, get_jwt_identity
+from services.sheets import GoogleSheetsClient
 
 bp = Blueprint('templates', __name__)
+sheets_client = GoogleSheetsClient()
 
 
 @bp.route('', methods=['GET'])
@@ -38,28 +40,27 @@ def list_templates():
     offset = request.args.get('offset', 0, type=int)
     category = request.args.get('category', type=str)
 
-    # TODO: Implement actual database query
-    # Mock response
-    templates = [
-        {
-            'id': 'tpl_001',
-            'name': 'LP-ヒーロー左画像',
-            'category': 'LP',
-            'preview_url': 'https://example.com/preview1.png',
-            'created_at': '2025-10-16T00:00:00Z'
-        },
-        {
-            'id': 'tpl_002',
-            'name': 'LP-ヒーロー右画像',
-            'category': 'LP',
-            'preview_url': 'https://example.com/preview2.png',
-            'created_at': '2025-10-16T00:00:00Z'
-        }
-    ]
+    # Get templates from Google Sheets
+    templates = sheets_client.get_templates(limit=limit, offset=offset)
+
+    # Filter by category if specified
+    if category:
+        templates = [t for t in templates if t.get('category') == category]
+
+    # Map to response format
+    response_templates = []
+    for t in templates:
+        response_templates.append({
+            'id': t['id'],
+            'name': t['name'],
+            'category': t.get('category', 'uncategorized'),
+            'preview_url': t.get('thumbnail_url', ''),
+            'created_at': t.get('created_at', '')
+        })
 
     return jsonify({
-        'templates': templates,
-        'total': len(templates),
+        'templates': response_templates,
+        'total': len(response_templates),
         'limit': limit,
         'offset': offset
     }), 200
@@ -88,25 +89,42 @@ def get_template(template_id):
         ]
     }
     """
-    # TODO: Implement actual database query
-    # Mock response
-    template = {
-        'id': template_id,
-        'name': 'LP-ヒーロー左画像',
-        'category': 'LP',
-        'preview_url': 'https://example.com/preview1.png',
-        'figma_file_key': 'XXXXX',
+    # Get template from Google Sheets
+    template = sheets_client.get_template(template_id)
+
+    if not template:
+        return jsonify({
+            'error': {
+                'code': 'NOT_FOUND',
+                'message': 'Template not found'
+            }
+        }), 404
+
+    # Get template fields
+    fields = sheets_client.get_template_fields(template_id)
+
+    # Map to response format
+    response = {
+        'id': template['id'],
+        'name': template['name'],
+        'category': template.get('category', 'uncategorized'),
+        'preview_url': template.get('thumbnail_url', ''),
+        'figma_file_key': template.get('figma_file_id', ''),
+        'figma_node_id': template.get('figma_node_id', ''),
         'fields': [
             {
-                'node_id': 'HEAD_TITLE',
-                'type': 'TEXT',
-                'max_chars': 36,
-                'required': True
+                'id': f['id'],
+                'node_id': f.get('field_name', ''),
+                'type': f.get('field_type', 'text').upper(),
+                'layer_name': f.get('layer_name', ''),
+                'default_value': f.get('default_value', ''),
+                'required': True  # Default to true for now
             }
+            for f in fields
         ]
     }
 
-    return jsonify(template), 200
+    return jsonify(response), 200
 
 
 @bp.route('', methods=['POST'])
