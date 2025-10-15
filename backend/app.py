@@ -39,10 +39,11 @@ limiter = Limiter(
 )
 
 # Import and register blueprints
-from api import auth, templates
+from api import auth, templates, jobs
 
 app.register_blueprint(auth.bp, url_prefix='/api/v1/auth')
 app.register_blueprint(templates.bp, url_prefix='/api/v1/templates')
+app.register_blueprint(jobs.bp, url_prefix='/api/v1/jobs')
 
 
 @app.route('/api/v1/health', methods=['GET'])

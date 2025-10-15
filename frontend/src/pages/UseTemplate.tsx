@@ -82,12 +82,28 @@ export default function UseTemplate() {
     setError('');
 
     try {
-      // TODO: ジョブ実行APIを呼び出す
-      // 今はアラート表示のみ
-      console.log('Template ID:', templateId);
-      console.log('Field Values:', fieldValues);
+      // ジョブ実行APIを呼び出す
+      const response = await fetch('/api/v1/jobs', {
+        method: 'POST',
+        headers: {
+          ...getAuthHeaders(),
+          'Content-Type': 'application/json',
+        },
+        body: JSON.stringify({
+          template_id: templateId,
+          input_data: fieldValues,
+        }),
+      });
 
-      alert('テンプレート適用ジョブを送信しました！\n\n実際のジョブ実行機能は次のステップで実装します。');
+      if (!response.ok) {
+        const errorData = await response.json();
+        throw new Error(errorData.error?.message || 'ジョブ作成に失敗しました');
+      }
+
+      const data = await response.json();
+
+      // 成功メッセージを表示
+      alert(`✅ ジョブ作成成功！\n\nJob ID: ${data.job_id}\nテンプレート: ${data.template_name}\n\n${data.message}`);
 
       // テンプレート一覧に戻る
       navigate('/templates');

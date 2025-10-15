@@ -309,6 +309,62 @@ class GoogleSheetsClient:
         except HttpError as e:
             print(f"Failed to update fill job: {e}")
 
+    def get_fill_jobs(self, user_id: str, limit: int = 20, offset: int = 0, status_filter: Optional[str] = None) -> List[Dict[str, Any]]:
+        """
+        Get fill jobs for a user
+
+        Args:
+            user_id: User ID
+            limit: Maximum number of jobs to return
+            offset: Number of jobs to skip
+            status_filter: Optional status filter
+
+        Returns:
+            List of job dictionaries
+        """
+        try:
+            result = self.service.spreadsheets().values().get(
+                spreadsheetId=self.spreadsheet_id,
+                range='FillJobs!A:H'
+            ).execute()
+
+            values = result.get('values', [])
+
+            if not values:
+                return []
+
+            # Skip header row and filter by user_id
+            jobs = []
+            for row in values[1:]:
+                if len(row) >= 3 and row[1] == user_id:
+                    # Apply status filter if provided
+                    status = row[3] if len(row) > 3 else 'pending'
+                    if status_filter and status != status_filter:
+                        continue
+
+                    jobs.append({
+                        'job_id': row[0],
+                        'user_id': row[1],
+                        'template_id': row[2],
+                        'status': status,
+                        'input_data': json.loads(row[4]) if len(row) > 4 and row[4] else {},
+                        'result_urls': json.loads(row[5]) if len(row) > 5 and row[5] else [],
+                        'created_at': row[6] if len(row) > 6 else None,
+                        'updated_at': row[7] if len(row) > 7 else None
+                    })
+
+            # Sort by created_at descending (most recent first)
+            jobs.sort(key=lambda x: x.get('created_at', ''), reverse=True)
+
+            # Apply pagination
+            paginated_jobs = jobs[offset:offset + limit]
+
+            return paginated_jobs
+
+        except HttpError as e:
+            print(f"Failed to get fill jobs: {e}")
+            return []
+
     def log_audit(self, actor: str, action: str, target_id: str, metadata: Dict[str, Any]):
         """
         Log an action to audit log
