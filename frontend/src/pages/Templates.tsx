@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { getAuthHeaders } from '../utils/auth';
+import TemplateDetailModal from '../components/TemplateDetailModal';
 
 interface Template {
   id: string;
@@ -17,6 +18,8 @@ export default function Templates() {
   const [error, setError] = useState('');
   const [selectedCategory, setSelectedCategory] = useState('all');
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedTemplateId, setSelectedTemplateId] = useState<string | null>(null);
+  const [isModalOpen, setIsModalOpen] = useState(false);
 
   // カテゴリ一覧
   const categories = ['all', 'LP', 'Banner', 'SNS', 'WebApp'];
@@ -57,6 +60,21 @@ export default function Templates() {
   const filteredTemplates = templates.filter((template) =>
     template.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
+
+  // モーダル開閉
+  const handleViewDetail = (templateId: string) => {
+    setSelectedTemplateId(templateId);
+    setIsModalOpen(true);
+  };
+
+  const handleCloseModal = () => {
+    setIsModalOpen(false);
+    setSelectedTemplateId(null);
+  };
+
+  const handleUseTemplate = (templateId: string) => {
+    navigate(`/templates/${templateId}/use`);
+  };
 
   return (
     <div>
@@ -167,10 +185,16 @@ export default function Templates() {
                 <h3 className="font-semibold text-gray-900 mb-1">{template.name}</h3>
                 <p className="text-sm text-gray-500">ID: {template.id}</p>
                 <div className="mt-4 flex space-x-2">
-                  <button className="flex-1 bg-indigo-600 text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700">
+                  <button
+                    onClick={() => handleUseTemplate(template.id)}
+                    className="flex-1 bg-indigo-600 text-white px-3 py-2 rounded-md text-sm font-medium hover:bg-indigo-700"
+                  >
                     使用する
                   </button>
-                  <button className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50">
+                  <button
+                    onClick={() => handleViewDetail(template.id)}
+                    className="px-3 py-2 border border-gray-300 rounded-md text-sm font-medium text-gray-700 hover:bg-gray-50"
+                  >
                     詳細
                   </button>
                 </div>
@@ -178,6 +202,16 @@ export default function Templates() {
             </div>
           ))}
         </div>
+      )}
+
+      {/* テンプレート詳細モーダル */}
+      {selectedTemplateId && (
+        <TemplateDetailModal
+          templateId={selectedTemplateId}
+          isOpen={isModalOpen}
+          onClose={handleCloseModal}
+          onUse={handleUseTemplate}
+        />
       )}
     </div>
   );

@@ -2,6 +2,7 @@ import { BrowserRouter, Routes, Route, Link, useNavigate } from 'react-router-do
 import Dashboard from './pages/Dashboard'
 import Templates from './pages/Templates'
 import CreateTemplate from './pages/CreateTemplate'
+import UseTemplate from './pages/UseTemplate'
 import Login from './pages/Login'
 import PrivateRoute from './components/PrivateRoute'
 import { isAuthenticated, logout, getUser } from './utils/auth'
@@ -89,6 +90,14 @@ function App() {
               element={
                 <PrivateRoute>
                   <CreateTemplate />
+                </PrivateRoute>
+              }
+            />
+            <Route
+              path="/templates/:templateId/use"
+              element={
+                <PrivateRoute>
+                  <UseTemplate />
                 </PrivateRoute>
               }
             />
