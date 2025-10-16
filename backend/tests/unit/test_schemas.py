@@ -105,14 +105,20 @@ def test_template_create_request_valid():
     data = {
         'name': 'Test Template',
         'figma_file_key': 'abc123xyz',
-        'category': 'social-media',
-        'tags': ['instagram', 'story']
+        'category': 'SNS',
+        'tags': ['instagram', 'story'],
+        'fields': [
+            {'type': 'text', 'label': 'Title', 'default_value': 'Sample Title'},
+            {'type': 'color', 'label': 'Background', 'default_value': '#FF5733'}
+        ]
     }
 
     request = TemplateCreateRequest(**data)
     assert request.name == 'Test Template'
     assert request.figma_file_key == 'abc123xyz'
+    assert request.category == 'SNS'
     assert len(request.tags) == 2
+    assert len(request.fields) == 2
 
 
 def test_template_create_request_tags_from_string():
@@ -127,6 +133,19 @@ def test_template_create_request_tags_from_string():
     assert len(request.tags) == 3
     assert 'instagram' in request.tags
     assert 'story' in request.tags
+
+
+def test_template_create_request_invalid_category():
+    """Test invalid category raises validation error"""
+    data = {
+        'name': 'Test Template',
+        'figma_file_key': 'abc123xyz',
+        'category': 'InvalidCategory',
+        'tags': ['test']
+    }
+
+    with pytest.raises(ValidationError):
+        TemplateCreateRequest(**data)
 
 
 def test_user_schema_valid():

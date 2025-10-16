@@ -9,10 +9,13 @@ from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_excep
 
 logger = structlog.get_logger()
 
-# Token limits
-MAX_PROMPT_TOKENS = 1500
-MAX_COMPLETION_TOKENS = 1500
-MAX_TOTAL_TOKENS = 3000
+# Token limits (updated 2025-10-16)
+# Total budget: 1,500 tokens per job
+# Agent1: 900 tokens (prompt generation)
+# Agent2: 600 tokens (JSON formatting)
+MAX_AGENT1_TOKENS = 900
+MAX_AGENT2_TOKENS = 600
+MAX_TOTAL_TOKENS = 1500
 
 # Pricing (per 1M tokens) - Claude Sonnet 4
 COST_PER_1M_INPUT_TOKENS = 3.00
@@ -70,7 +73,7 @@ class Agent1:
             # Call Claude API
             response = self.client.messages.create(
                 model="claude-sonnet-4-20250514",
-                max_tokens=MAX_COMPLETION_TOKENS,
+                max_tokens=MAX_AGENT1_TOKENS,
                 temperature=temperature,
                 system=system_prompt,
                 messages=[
@@ -82,9 +85,10 @@ class Agent1:
             prompt_tokens = response.usage.input_tokens
             completion_tokens = response.usage.output_tokens
 
-            # Check token limits
-            if prompt_tokens + completion_tokens > MAX_TOTAL_TOKENS:
-                raise ValueError(f"Token limit exceeded: {prompt_tokens + completion_tokens} > {MAX_TOTAL_TOKENS}")
+            # Check Agent1 token limit
+            total_tokens = prompt_tokens + completion_tokens
+            if total_tokens > MAX_AGENT1_TOKENS:
+                raise ValueError(f"Agent1 token limit exceeded: {total_tokens} > {MAX_AGENT1_TOKENS}")
 
             logger.info(
                 "agent1_generate_success",
@@ -185,7 +189,7 @@ Return ONLY valid JSON, no additional text."""
 
             response = self.client.messages.create(
                 model="claude-sonnet-4-20250514",
-                max_tokens=MAX_COMPLETION_TOKENS,
+                max_tokens=MAX_AGENT2_TOKENS,
                 temperature=0.0,  # Deterministic for formatting
                 system=system_prompt,
                 messages=[
@@ -196,6 +200,11 @@ Return ONLY valid JSON, no additional text."""
             json_output = response.content[0].text
             prompt_tokens = response.usage.input_tokens
             completion_tokens = response.usage.output_tokens
+
+            # Check Agent2 token limit
+            total_tokens = prompt_tokens + completion_tokens
+            if total_tokens > MAX_AGENT2_TOKENS:
+                raise ValueError(f"Agent2 token limit exceeded: {total_tokens} > {MAX_AGENT2_TOKENS}")
 
             # Parse JSON to validate
             import json

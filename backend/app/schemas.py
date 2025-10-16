@@ -49,15 +49,32 @@ class RefreshRequest(BaseModel):
 
 # ========== Template Schemas ==========
 
+class Field(BaseModel):
+    """Field definition for template inputs"""
+    type: Literal['text', 'color', 'border']
+    label: str = Field(min_length=1, max_length=100)
+    default_value: Any
+
+    class Config:
+        json_schema_extra = {
+            "example": {
+                "type": "text",
+                "label": "Title",
+                "default_value": "Enter title here"
+            }
+        }
+
+
 class TemplateSchema(BaseModel):
-    """Template model"""
+    """Template model (extended schema with category, fields, preview_url)"""
     id: str
     name: str = Field(min_length=1, max_length=200)
     figma_file_key: str = Field(min_length=1, max_length=100)
     figma_node_id: Optional[str] = Field(None, max_length=100)
-    category: str = Field(default='general', max_length=50)
+    category: Literal['LP', 'Banner', 'SNS', 'WebApp'] = 'LP'
     tags: List[str] = Field(default_factory=list, max_items=10)
-    thumbnail_url: Optional[str] = None
+    preview_url: Optional[str] = None
+    fields: List[Field] = Field(default_factory=list)
     version: str = Field(default='1.0.0', regex=r'^\d+\.\d+\.\d+$')
     created_at: datetime
     updated_at: Optional[datetime] = None
@@ -68,6 +85,16 @@ class TemplateSchema(BaseModel):
             return [tag.strip() for tag in v.split(',') if tag.strip()]
         return v
 
+    @validator('fields', pre=True)
+    def validate_fields(cls, v):
+        if isinstance(v, str):
+            import json
+            try:
+                return json.loads(v)
+            except:
+                return []
+        return v
+
     class Config:
         json_schema_extra = {
             "example": {
@@ -75,9 +102,14 @@ class TemplateSchema(BaseModel):
                 "name": "Instagram Story Template",
                 "figma_file_key": "abc123xyz",
                 "figma_node_id": "1:234",
-                "category": "social-media",
+                "category": "SNS",
                 "tags": ["instagram", "story", "marketing"],
-                "thumbnail_url": "https://example.com/thumb.png",
+                "preview_url": "https://example.com/thumb.png",
+                "fields": [
+                    {"type": "text", "label": "Title", "default_value": "Sample Title"},
+                    {"type": "color", "label": "Background Color", "default_value": "#FF5733"},
+                    {"type": "border", "label": "Border Style", "default_value": "solid"}
+                ],
                 "version": "1.0.0",
                 "created_at": "2025-10-16T12:00:00Z"
             }
@@ -89,9 +121,10 @@ class TemplateCreateRequest(BaseModel):
     name: str = Field(min_length=1, max_length=200)
     figma_file_key: str = Field(min_length=1, max_length=100)
     figma_node_id: Optional[str] = Field(None, max_length=100)
-    category: str = Field(default='general', max_length=50)
+    category: Literal['LP', 'Banner', 'SNS', 'WebApp'] = 'LP'
     tags: List[str] = Field(default_factory=list, max_items=10)
-    thumbnail_url: Optional[str] = None
+    preview_url: Optional[str] = None
+    fields: List[Field] = Field(default_factory=list)
 
 
 class TemplateUpdateRequest(BaseModel):
@@ -99,9 +132,10 @@ class TemplateUpdateRequest(BaseModel):
     name: Optional[str] = Field(None, min_length=1, max_length=200)
     figma_file_key: Optional[str] = Field(None, min_length=1, max_length=100)
     figma_node_id: Optional[str] = Field(None, max_length=100)
-    category: Optional[str] = Field(None, max_length=50)
+    category: Optional[Literal['LP', 'Banner', 'SNS', 'WebApp']] = None
     tags: Optional[List[str]] = Field(None, max_items=10)
-    thumbnail_url: Optional[str] = None
+    preview_url: Optional[str] = None
+    fields: Optional[List[Field]] = None
 
 
 class TemplateListResponse(BaseModel):

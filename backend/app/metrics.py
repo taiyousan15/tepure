@@ -2,11 +2,23 @@
 Metrics and monitoring utilities
 """
 import structlog
+import os
 from typing import Dict, Any, Optional
 from datetime import datetime, date
 from .sheets import GoogleSheetsClient
 
 logger = structlog.get_logger()
+
+# Monitoring Alert Thresholds (updated 2025-10-16)
+# エラー率: 5%超過/5分
+ERROR_RATE_THRESHOLD = float(os.getenv('ERROR_RATE_THRESHOLD', '0.05'))  # 5%
+ERROR_RATE_WINDOW_MINUTES = int(os.getenv('ERROR_RATE_WINDOW_MINUTES', '5'))
+
+# レイテンシ: P95が2000ms超過
+LATENCY_P95_THRESHOLD_MS = int(os.getenv('LATENCY_P95_THRESHOLD_MS', '2000'))  # 2000ms
+
+# コスト: 1日$50超過
+DAILY_COST_THRESHOLD_USD = float(os.getenv('DAILY_COST_THRESHOLD_USD', '50.0'))  # $50/day
 
 
 class MetricsCollector:

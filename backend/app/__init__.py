@@ -84,11 +84,37 @@ def create_app(config=None):
     # Health check endpoint
     @app.route('/health', methods=['GET'])
     def health_check():
-        """Health check endpoint for load balancers"""
+        """
+        Health check endpoint for load balancers
+
+        Response:
+            {
+                "ok": true,
+                "version": "1.0.0",
+                "git": "abc123def"
+            }
+        """
+        import subprocess
+
+        # Get git commit hash
+        git_hash = os.getenv('GIT_COMMIT', 'unknown')
+        if git_hash == 'unknown':
+            try:
+                result = subprocess.run(
+                    ['git', 'rev-parse', '--short', 'HEAD'],
+                    capture_output=True,
+                    text=True,
+                    timeout=2
+                )
+                if result.returncode == 0:
+                    git_hash = result.stdout.strip()
+            except:
+                pass
+
         return jsonify({
-            'status': 'healthy',
-            'service': 'tepure-api',
-            'version': os.getenv('APP_VERSION', '1.0.0')
+            'ok': True,
+            'version': os.getenv('APP_VERSION', '1.0.0'),
+            'git': git_hash
         }), 200
 
     # Error handlers
