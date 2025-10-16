@@ -1,0 +1,136 @@
+name: Smoke Test
+
+on:
+  workflow_run:
+    workflows: ["Backend Deploy"]
+    types:
+      - completed
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      api_url:
+        description: 'API Base URL to test'
+        required: true
+        default: 'https://tepure-api-preview.run.app'
+
+env:
+  API_BASE_URL: ${{ github.event.inputs.api_url || 'https://tepure-api-preview.run.app' }}
+
+jobs:
+  smoke-test:
+    name: Run Smoke Tests
+    runs-on: ubuntu-latest
+    if: ${{ github.event.workflow_run.conclusion == 'success' || github.event_name == 'workflow_dispatch' }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup environment
+        run: |
+          echo "API_BASE_URL=${{ env.API_BASE_URL }}" >> $GITHUB_ENV
+
+      - name: Wait for deployment
+        run: |
+          echo "Waiting 30 seconds for Cloud Run to be ready..."
+          sleep 30
+
+      - name: Run smoke tests
+        id: smoke
+        run: |
+          chmod +x scripts/smoke-test.sh
+          ./scripts/smoke-test.sh ${{ env.API_BASE_URL }}
+
+      - name: Report results
+        if: always()
+        run: |
+          if [ ${{ steps.smoke.outcome }} == 'success' ]; then
+            echo "## ✅ Smoke Tests Passed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "All smoke tests passed successfully!" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "- **API Base URL**: ${{ env.API_BASE_URL }}" >> $GITHUB_STEP_SUMMARY
+            echo "- **Health Check**: ✅ Passed" >> $GITHUB_STEP_SUMMARY
+            echo "- **Authentication**: ✅ Passed" >> $GITHUB_STEP_SUMMARY
+            echo "- **Templates API**: ✅ Passed" >> $GITHUB_STEP_SUMMARY
+            echo "- **Jobs API**: ✅ Passed" >> $GITHUB_STEP_SUMMARY
+            echo "- **Idempotency**: ✅ Passed" >> $GITHUB_STEP_SUMMARY
+          else
+            echo "## ❌ Smoke Tests Failed" >> $GITHUB_STEP_SUMMARY
+            echo "" >> $GITHUB_STEP_SUMMARY
+            echo "Some smoke tests failed. Please review the logs above." >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Notify on failure
+        if: failure()
+        run: |
+          echo "❌ Smoke tests failed on ${{ env.API_BASE_URL }}"
+          # Add Slack/Discord notification here if needed
+
+  create-uat-issue:
+    name: Create UAT Issue
+    runs-on: ubuntu-latest
+    needs: smoke-test
+    if: success()
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Create UAT Issue
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const issue = await github.rest.issues.create({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              title: `UAT Ready - Preview Environment (${new Date().toISOString().split('T')[0]})`,
+              body: `## 🚀 Preview Environment Ready for UAT
+
+            Smoke tests have passed successfully. Preview environment is ready for UAT.
+
+            ### Environment URLs
+            - **Frontend**: https://tepure-preview.web.app
+            - **API**: ${{ env.API_BASE_URL }}
+
+            ### Smoke Test Results
+            - ✅ Health Check
+            - ✅ Authentication
+            - ✅ Templates API (new schema validated)
+            - ✅ Jobs API (status vocabulary validated)
+            - ✅ Token limit enforcement
+            - ✅ Idempotency
+
+            ### Next Steps
+            1. Review \`docs/UAT_CHECKLIST.md\`
+            2. Distribute tester accounts
+            3. Execute UAT test cases
+            4. Report issues with \`uat\` label
+
+            ### UAT Period
+            **Start**: ${new Date().toISOString()}
+            **End**: TBD (typically 2-3 days)
+
+            ### Test Accounts
+            - tester1@example.com
+            - tester2@example.com
+            - tester3@example.com
+            - tester_admin@example.com (admin role)
+
+            ### Critical Test Items
+            - [ ] Templates category filter (LP/Banner/SNS/WebApp)
+            - [ ] Template fields array display
+            - [ ] Job status transitions (pending→processing→completed)
+            - [ ] Token budget enforcement (≤1500)
+            - [ ] /health endpoint format
+
+            ### Reporting Issues
+            Create new issues with:
+            - Label: \`uat\`
+            - Priority: \`P0\` (critical), \`P1\` (high), \`P2\` (medium)
+            - Include: Screenshots/videos, steps to reproduce
+
+            cc: @project-owner @uat-team
+            `,
+              labels: ['uat', 'preview', 'testing']
+            });
+
+            console.log(`Created UAT issue: ${issue.data.html_url}`);
