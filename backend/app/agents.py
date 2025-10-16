@@ -48,7 +48,11 @@ class Agent1:
 
     def __init__(self):
         """Initialize Agent1"""
-        self.client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+        # Primary: ANTHROPIC_API_KEY, Fallback: LLM_API_KEY (backward compatibility)
+        api_key = os.getenv('ANTHROPIC_API_KEY') or os.getenv('LLM_API_KEY')
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY or LLM_API_KEY environment variable is required")
+        self.client = Anthropic(api_key=api_key)
         logger.info("agent1_initialized")
 
     @retry(
@@ -61,7 +65,7 @@ class Agent1:
         template_name: str,
         inputs: Dict[str, Any],
         temperature: float = 0.7,
-        intensity: str = 'medium'
+        intensity: int = 5
     ) -> Tuple[str, int, int]:
         """
         Generate optimized prompt for Figma content generation
@@ -70,7 +74,7 @@ class Agent1:
             template_name: Template name
             inputs: User input data
             temperature: LLM temperature (0.0-1.0)
-            intensity: Generation intensity (low/medium/high)
+            intensity: Generation intensity from 1 (low) to 10 (high)
 
         Returns:
             Tuple of (generated_prompt, prompt_tokens, completion_tokens)
@@ -161,8 +165,16 @@ class Agent1:
             logger.error("agent1_error", error=str(e), exc_info=True)
             raise
 
-    def _build_system_prompt(self, intensity: str) -> str:
-        """Build system prompt based on intensity"""
+    def _build_system_prompt(self, intensity: int) -> str:
+        """
+        Build system prompt based on intensity (1-10)
+
+        Args:
+            intensity: Generation intensity from 1 (minimal) to 10 (very creative)
+
+        Returns:
+            System prompt string
+        """
         base_prompt = """You are a creative content generator for Figma templates.
 Your task is to generate compelling, on-brand content based on user inputs.
 
@@ -172,13 +184,18 @@ Guidelines:
 - Follow brand guidelines if provided
 - Ensure content fits visual constraints"""
 
-        intensity_prompts = {
-            'low': "\n- Keep content minimal and straightforward",
-            'medium': "\n- Balance creativity with clarity",
-            'high': "\n- Be bold and creative, push boundaries"
-        }
+        # Map intensity (1-10) to creativity levels
+        if intensity <= 3:
+            # Low: 1-3
+            intensity_guidance = "\n- Keep content minimal and straightforward\n- Focus on clarity over creativity\n- Use simple, direct language"
+        elif intensity <= 7:
+            # Medium: 4-7
+            intensity_guidance = "\n- Balance creativity with clarity\n- Be engaging but professional\n- Add some personality to the content"
+        else:
+            # High: 8-10
+            intensity_guidance = "\n- Be bold and creative, push boundaries\n- Use vivid, attention-grabbing language\n- Take risks with unconventional ideas"
 
-        return base_prompt + intensity_prompts.get(intensity, intensity_prompts['medium'])
+        return base_prompt + intensity_guidance
 
     def _build_user_prompt(self, template_name: str, inputs: Dict[str, Any]) -> str:
         """Build user prompt from template and inputs"""
@@ -203,7 +220,11 @@ class Agent2:
 
     def __init__(self):
         """Initialize Agent2"""
-        self.client = Anthropic(api_key=os.getenv('ANTHROPIC_API_KEY'))
+        # Primary: ANTHROPIC_API_KEY, Fallback: LLM_API_KEY (backward compatibility)
+        api_key = os.getenv('ANTHROPIC_API_KEY') or os.getenv('LLM_API_KEY')
+        if not api_key:
+            raise ValueError("ANTHROPIC_API_KEY or LLM_API_KEY environment variable is required")
+        self.client = Anthropic(api_key=api_key)
         logger.info("agent2_initialized")
 
     @retry(

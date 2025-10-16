@@ -96,8 +96,8 @@ def create_app(config=None):
         """
         import subprocess
 
-        # Get git commit hash
-        git_hash = os.getenv('GIT_COMMIT', 'unknown')
+        # Get git commit hash (primary: GIT_SHA, fallback: GIT_COMMIT)
+        git_hash = os.getenv('GIT_SHA') or os.getenv('GIT_COMMIT', 'unknown')
         if git_hash == 'unknown':
             try:
                 result = subprocess.run(

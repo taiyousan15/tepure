@@ -154,7 +154,7 @@ class JobCreateRequest(BaseModel):
     template_id: str = Field(min_length=1, max_length=100)
     inputs: Dict[str, Any] = Field(default_factory=dict)
     temperature: float = Field(default=0.7, ge=0.0, le=1.0)
-    intensity: Literal['low', 'medium', 'high'] = 'medium'
+    intensity: int = Field(default=5, ge=1, le=10, description="Generation intensity from 1 (low) to 10 (high)")
     idempotency_key: Optional[str] = Field(None, min_length=1, max_length=128)
 
     @validator('inputs')
@@ -175,7 +175,7 @@ class JobCreateRequest(BaseModel):
                     "cta": "Learn More"
                 },
                 "temperature": 0.7,
-                "intensity": "medium",
+                "intensity": 7,
                 "idempotency_key": "client-generated-uuid-12345"
             }
         }
