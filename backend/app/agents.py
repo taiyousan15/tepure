@@ -7,19 +7,38 @@ from typing import Dict, Any, Tuple
 from anthropic import Anthropic, APIError, RateLimitError
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 
+from .errors import TokenBudgetExceededError
+
 logger = structlog.get_logger()
 
 # Token limits (updated 2025-10-16)
 # Total budget: 1,500 tokens per job
 # Agent1: 900 tokens (prompt generation)
 # Agent2: 600 tokens (JSON formatting)
-MAX_AGENT1_TOKENS = 900
-MAX_AGENT2_TOKENS = 600
-MAX_TOTAL_TOKENS = 1500
+MAX_AGENT1_TOKENS = int(os.getenv('TOKEN_BUDGET_AGENT1', '900'))
+MAX_AGENT2_TOKENS = int(os.getenv('TOKEN_BUDGET_AGENT2', '600'))
+MAX_TOTAL_TOKENS = int(os.getenv('TOKEN_BUDGET_TOTAL', '1500'))
 
 # Pricing (per 1M tokens) - Claude Sonnet 4
 COST_PER_1M_INPUT_TOKENS = 3.00
 COST_PER_1M_OUTPUT_TOKENS = 15.00
+
+
+def estimate_tokens(text: str) -> int:
+    """
+    Estimate token count from text (rough approximation)
+
+    Rule of thumb: ~4 characters per token for English
+    For more accurate estimates, use tiktoken library
+
+    Args:
+        text: Input text
+
+    Returns:
+        Estimated token count
+    """
+    # Rough estimate: 1 token ≈ 4 characters
+    return len(text) // 4
 
 
 class Agent1:
@@ -55,6 +74,9 @@ class Agent1:
 
         Returns:
             Tuple of (generated_prompt, prompt_tokens, completion_tokens)
+
+        Raises:
+            TokenBudgetExceededError: If estimated tokens exceed budget
         """
         try:
             # Construct system prompt
@@ -63,11 +85,29 @@ class Agent1:
             # Construct user prompt
             user_prompt = self._build_user_prompt(template_name, inputs)
 
+            # Pre-check token budget
+            estimated_input_tokens = estimate_tokens(system_prompt) + estimate_tokens(user_prompt)
+            # Assume max_tokens will be used for output
+            estimated_total_tokens = estimated_input_tokens + MAX_AGENT1_TOKENS
+
+            if estimated_total_tokens > MAX_AGENT1_TOKENS:
+                logger.warning(
+                    "agent1_token_budget_exceeded_precheck",
+                    estimated_tokens=estimated_total_tokens,
+                    budget=MAX_AGENT1_TOKENS
+                )
+                raise TokenBudgetExceededError(
+                    estimated_tokens=estimated_total_tokens,
+                    budget_tokens=MAX_AGENT1_TOKENS,
+                    agent="Agent1"
+                )
+
             logger.info(
                 "agent1_generate_start",
                 template=template_name,
                 temperature=temperature,
-                intensity=intensity
+                intensity=intensity,
+                estimated_input_tokens=estimated_input_tokens
             )
 
             # Call Claude API
@@ -85,10 +125,19 @@ class Agent1:
             prompt_tokens = response.usage.input_tokens
             completion_tokens = response.usage.output_tokens
 
-            # Check Agent1 token limit
+            # Check Agent1 token limit (actual usage)
             total_tokens = prompt_tokens + completion_tokens
             if total_tokens > MAX_AGENT1_TOKENS:
-                raise ValueError(f"Agent1 token limit exceeded: {total_tokens} > {MAX_AGENT1_TOKENS}")
+                logger.warning(
+                    "agent1_token_budget_exceeded_actual",
+                    actual_tokens=total_tokens,
+                    budget=MAX_AGENT1_TOKENS
+                )
+                raise TokenBudgetExceededError(
+                    estimated_tokens=total_tokens,
+                    budget_tokens=MAX_AGENT1_TOKENS,
+                    agent="Agent1"
+                )
 
             logger.info(
                 "agent1_generate_success",
@@ -99,6 +148,9 @@ class Agent1:
 
             return generated_prompt, prompt_tokens, completion_tokens
 
+        except TokenBudgetExceededError:
+            # Re-raise without wrapping
+            raise
         except RateLimitError as e:
             logger.error("agent1_rate_limit", error=str(e))
             raise
@@ -173,6 +225,9 @@ class Agent2:
 
         Returns:
             Tuple of (formatted_json, prompt_tokens, completion_tokens)
+
+        Raises:
+            TokenBudgetExceededError: If estimated tokens exceed budget
         """
         try:
             system_prompt = """You are a JSON formatter. Convert the provided content into valid JSON format.
@@ -185,7 +240,28 @@ Content to format:
 
 Return ONLY valid JSON, no additional text."""
 
-            logger.info("agent2_format_start", template=template_name)
+            # Pre-check token budget
+            estimated_input_tokens = estimate_tokens(system_prompt) + estimate_tokens(user_prompt)
+            # Assume max_tokens will be used for output
+            estimated_total_tokens = estimated_input_tokens + MAX_AGENT2_TOKENS
+
+            if estimated_total_tokens > MAX_AGENT2_TOKENS:
+                logger.warning(
+                    "agent2_token_budget_exceeded_precheck",
+                    estimated_tokens=estimated_total_tokens,
+                    budget=MAX_AGENT2_TOKENS
+                )
+                raise TokenBudgetExceededError(
+                    estimated_tokens=estimated_total_tokens,
+                    budget_tokens=MAX_AGENT2_TOKENS,
+                    agent="Agent2"
+                )
+
+            logger.info(
+                "agent2_format_start",
+                template=template_name,
+                estimated_input_tokens=estimated_input_tokens
+            )
 
             response = self.client.messages.create(
                 model="claude-sonnet-4-20250514",
@@ -201,10 +277,19 @@ Return ONLY valid JSON, no additional text."""
             prompt_tokens = response.usage.input_tokens
             completion_tokens = response.usage.output_tokens
 
-            # Check Agent2 token limit
+            # Check Agent2 token limit (actual usage)
             total_tokens = prompt_tokens + completion_tokens
             if total_tokens > MAX_AGENT2_TOKENS:
-                raise ValueError(f"Agent2 token limit exceeded: {total_tokens} > {MAX_AGENT2_TOKENS}")
+                logger.warning(
+                    "agent2_token_budget_exceeded_actual",
+                    actual_tokens=total_tokens,
+                    budget=MAX_AGENT2_TOKENS
+                )
+                raise TokenBudgetExceededError(
+                    estimated_tokens=total_tokens,
+                    budget_tokens=MAX_AGENT2_TOKENS,
+                    agent="Agent2"
+                )
 
             # Parse JSON to validate
             import json
@@ -222,6 +307,9 @@ Return ONLY valid JSON, no additional text."""
         except json.JSONDecodeError as e:
             logger.error("agent2_json_decode_error", error=str(e), output=json_output)
             raise ValueError(f"Invalid JSON output: {str(e)}")
+        except TokenBudgetExceededError:
+            # Re-raise without wrapping
+            raise
         except RateLimitError as e:
             logger.error("agent2_rate_limit", error=str(e))
             raise

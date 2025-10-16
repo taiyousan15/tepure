@@ -30,6 +30,19 @@ from .sheets import GoogleSheetsClient
 from .jobs import job_queue
 from .agents import Agent1, Agent2, calculate_cost
 from .metrics import metrics_collector
+from .errors import (
+    TepureError,
+    TokenBudgetExceededError,
+    IdempotencyConflictError,
+    QuotaExceededError,
+    exception_to_response,
+    validation_error,
+    invalid_json_error,
+    invalid_credentials_error,
+    forbidden_error,
+    not_found_error,
+    internal_server_error
+)
 
 logger = structlog.get_logger()
 
@@ -108,10 +121,7 @@ def login():
 
         if not user or not verify_password(data.password, user['password_hash']):
             logger.warning("login_failed", email=mask_pii({'email': data.email}))
-            return jsonify({
-                'code': 'INVALID_CREDENTIALS',
-                'message': 'Invalid email or password'
-            }), 401
+            return invalid_credentials_error()
 
         # Create tokens
         access_token = create_access_token_for_user(user['id'], user.get('role', 'user'))
@@ -137,17 +147,12 @@ def login():
         }), 200
 
     except ValidationError as e:
-        return jsonify({
-            'code': 'VALIDATION_ERROR',
-            'message': 'Invalid request',
-            'details': e.errors()
-        }), 400
+        return validation_error(details=e.errors())
+    except TepureError as e:
+        return exception_to_response(e)
     except Exception as e:
         logger.error("login_error", error=str(e), exc_info=True)
-        return jsonify({
-            'code': 'LOGIN_ERROR',
-            'message': 'Login failed'
-        }), 500
+        return internal_server_error()
 
 
 @api_v1_bp.route('/auth/refresh', methods=['POST'])
@@ -278,21 +283,17 @@ def get_template(template_id: str):
         template = sheets_client.get_template(template_id)
 
         if not template:
-            return jsonify({
-                'code': 'NOT_FOUND',
-                'message': 'Template not found'
-            }), 404
+            return not_found_error("Template")
 
         logger.info("template_retrieved", template_id=template_id)
 
         return jsonify(template), 200
 
+    except TepureError as e:
+        return exception_to_response(e)
     except Exception as e:
         logger.error("get_template_error", template_id=template_id, error=str(e))
-        return jsonify({
-            'code': 'GET_ERROR',
-            'message': 'Failed to get template'
-        }), 500
+        return internal_server_error()
 
 
 @api_v1_bp.route('/templates', methods=['POST'])
@@ -388,13 +389,11 @@ def create_generation_job():
         # Check monthly quota
         usage = sheets_client.get_user_monthly_usage(user_id)
         user = sheets_client.get_user_by_email(get_jwt()['email'])  # Get user for quota
+        monthly_quota = user.get('monthly_quota', 100)
 
-        if usage >= user.get('monthly_quota', 100):
-            logger.warning("quota_exceeded", user_id=user_id, usage=usage)
-            return jsonify({
-                'code': 'QUOTA_EXCEEDED',
-                'message': f'Monthly quota exceeded ({usage}/{user.get("monthly_quota", 100)})'
-            }), 429
+        if usage >= monthly_quota:
+            logger.warning("quota_exceeded", user_id=user_id, usage=usage, quota=monthly_quota)
+            raise QuotaExceededError(usage=usage, quota=monthly_quota)
 
         # Get idempotency key
         idempotency_key = data.idempotency_key or request.headers.get('X-Idempotency-Key')
@@ -428,17 +427,22 @@ def create_generation_job():
         return jsonify(job), 202
 
     except ValidationError as e:
-        return jsonify({
-            'code': 'VALIDATION_ERROR',
-            'message': 'Invalid request',
-            'details': e.errors()
-        }), 400
+        return validation_error(details=e.errors())
+    except TokenBudgetExceededError as e:
+        # 422 Token Budget Exceeded
+        logger.warning("token_budget_exceeded", user_id=user_id, error=str(e))
+        return exception_to_response(e)
+    except QuotaExceededError as e:
+        # 429 Quota Exceeded
+        return exception_to_response(e)
+    except IdempotencyConflictError as e:
+        # 409 Idempotency Conflict
+        return exception_to_response(e)
+    except TepureError as e:
+        return exception_to_response(e)
     except Exception as e:
         logger.error("create_job_error", error=str(e), exc_info=True)
-        return jsonify({
-            'code': 'JOB_CREATE_ERROR',
-            'message': 'Failed to create job'
-        }), 500
+        return internal_server_error()
 
 
 @api_v1_bp.route('/jobs/<job_id>', methods=['GET'])
@@ -460,28 +464,21 @@ def get_job(job_id: str):
         job = job_queue.get_job_status(job_id)
 
         if not job:
-            return jsonify({
-                'code': 'NOT_FOUND',
-                'message': 'Job not found'
-            }), 404
+            return not_found_error("Job")
 
         # Check authorization
         if job['user_id'] != user_id and get_jwt().get('role') != 'admin':
-            return jsonify({
-                'code': 'FORBIDDEN',
-                'message': 'Access denied'
-            }), 403
+            return forbidden_error("You don't have permission to access this job")
 
         logger.info("job_retrieved", job_id=job_id, status=job['status'])
 
         return jsonify(job), 200
 
+    except TepureError as e:
+        return exception_to_response(e)
     except Exception as e:
         logger.error("get_job_error", job_id=job_id, error=str(e))
-        return jsonify({
-            'code': 'GET_JOB_ERROR',
-            'message': 'Failed to get job'
-        }), 500
+        return internal_server_error()
 
 
 # ========== Admin Endpoints ==========
