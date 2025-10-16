@@ -1,0 +1,79 @@
+[run]
+# Coverage configuration
+
+# Source directories to measure
+source = .
+
+# Omit test files and virtual environments
+omit =
+    tests/*
+    test_*.py
+    *_test.py
+    */tests/*
+    */test/*
+    */.venv/*
+    */venv/*
+    */virtualenv/*
+    */.tox/*
+    */site-packages/*
+    __pycache__/*
+
+# Run branch coverage
+branch = True
+
+[report]
+# Reporting options
+
+# Precision for coverage percentages
+precision = 2
+
+# Show lines that weren't executed
+show_missing = True
+
+# Skip files with 100% coverage
+skip_covered = False
+
+# Fail if coverage is below 80%
+fail_under = 80
+
+# Ignore errors
+ignore_errors = False
+
+# Exclude lines from coverage
+exclude_lines =
+    # Standard pragma
+    pragma: no cover
+
+    # Don't complain about missing debug code
+    def __repr__
+    def __str__
+
+    # Don't complain if tests don't hit defensive assertion code
+    raise AssertionError
+    raise NotImplementedError
+
+    # Don't complain if non-runnable code isn't run
+    if __name__ == .__main__.:
+    if TYPE_CHECKING:
+    if typing.TYPE_CHECKING:
+
+    # Don't complain about abstract methods
+    @abstractmethod
+    @abc.abstractmethod
+
+    # Don't complain about pass statements
+    pass
+
+    # Don't complain about ellipsis
+    \.\.\.
+
+[html]
+# HTML report options
+directory = htmlcov
+title = Backend Test Coverage Report
+
+[json]
+# JSON report options
+output = coverage.json
+pretty_print = true
+show_contexts = true
