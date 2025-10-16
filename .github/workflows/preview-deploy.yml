@@ -1,0 +1,291 @@
+name: Preview Deploy
+
+on:
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: 'Docker image tag (default: preview-YYYYMMDD)'
+        required: false
+        default: ''
+
+env:
+  GCP_PROJECT_ID: ${{ secrets.GCP_PROJECT_ID }}
+  GCP_REGION: asia-northeast1
+  SERVICE_NAME: tepure-api-preview
+
+jobs:
+  preflight:
+    name: Preflight Check
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Check Secrets
+        run: python ops/check-secrets.py --source env --json
+        env:
+          JWT_SECRET: ${{ secrets.JWT_SECRET }}
+          REFRESH_SECRET: ${{ secrets.REFRESH_SECRET }}
+          GOOGLE_SERVICE_ACCOUNT_JSON_BASE64: ${{ secrets.GOOGLE_SERVICE_ACCOUNT_JSON_BASE64 }}
+          FIGMA_API_TOKEN: ${{ secrets.FIGMA_API_TOKEN }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          SHEETS_USERS_ID: ${{ secrets.SHEETS_USERS_ID }}
+          SHEETS_TEMPLATES_ID: ${{ secrets.SHEETS_TEMPLATES_ID }}
+          SHEETS_JOBS_ID: ${{ secrets.SHEETS_JOBS_ID }}
+          SHEETS_AUDITLOGS_ID: ${{ secrets.SHEETS_AUDITLOGS_ID }}
+          SENTRY_DSN: ${{ secrets.SENTRY_DSN }}
+          GA_MEASUREMENT_ID: ${{ secrets.GA_MEASUREMENT_ID }}
+          ERROR_RATE_THRESHOLD: "0.05"
+          ERROR_RATE_WINDOW_MINUTES: "5"
+          LATENCY_P95_THRESHOLD_MS: "2000"
+          DAILY_COST_THRESHOLD_USD: "50.0"
+          APP_VERSION: "1.0.0-preview"
+          GIT_SHA: ${{ github.sha }}
+
+  test:
+    name: Backend Tests
+    runs-on: ubuntu-latest
+    needs: preflight
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          cd backend
+          pip install -r requirements.txt
+          pip install pytest pytest-cov mypy
+
+      - name: Run type check
+        run: |
+          cd backend
+          mypy app/ --ignore-missing-imports
+
+      - name: Run tests
+        run: |
+          cd backend
+          pytest tests/unit -v --cov=app --cov-report=xml
+
+      - name: Upload coverage
+        uses: codecov/codecov-action@v4
+        with:
+          files: ./backend/coverage.xml
+          flags: backend-preview
+          name: backend-preview-coverage
+
+  build-and-deploy-api:
+    name: Build and Deploy API to Cloud Run
+    runs-on: ubuntu-latest
+    needs: test
+
+    permissions:
+      contents: read
+      id-token: write
+
+    outputs:
+      api_url: ${{ steps.get-url.outputs.url }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Authenticate to Google Cloud
+        uses: google-github-actions/auth@v2
+        with:
+          credentials_json: ${{ secrets.GCP_SA_KEY }}
+
+      - name: Set up Cloud SDK
+        uses: google-github-actions/setup-gcloud@v2
+
+      - name: Configure Docker for Artifact Registry
+        run: |
+          gcloud auth configure-docker ${{ env.GCP_REGION }}-docker.pkg.dev
+
+      - name: Set image tag
+        id: set-tag
+        run: |
+          if [ -n "${{ github.event.inputs.tag }}" ]; then
+            TAG="${{ github.event.inputs.tag }}"
+          else
+            TAG="preview-$(date +%Y%m%d)"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "Using tag: $TAG"
+
+      - name: Build Docker image
+        run: |
+          cd backend
+          docker build -t ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/tepure/api:${{ steps.set-tag.outputs.tag }} .
+          docker tag ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/tepure/api:${{ steps.set-tag.outputs.tag }} \
+                     ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/tepure/api:preview-latest
+
+      - name: Push Docker image
+        run: |
+          docker push ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/tepure/api:${{ steps.set-tag.outputs.tag }}
+          docker push ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/tepure/api:preview-latest
+
+      - name: Deploy to Cloud Run (Preview)
+        run: |
+          gcloud run deploy ${{ env.SERVICE_NAME }} \
+            --image ${{ env.GCP_REGION }}-docker.pkg.dev/${{ env.GCP_PROJECT_ID }}/tepure/api:${{ steps.set-tag.outputs.tag }} \
+            --region ${{ env.GCP_REGION }} \
+            --platform managed \
+            --allow-unauthenticated \
+            --memory 512Mi \
+            --cpu 1 \
+            --min-instances 0 \
+            --max-instances 5 \
+            --timeout 60 \
+            --set-env-vars "\
+ENV=preview,\
+APP_VERSION=1.0.0-preview,\
+GIT_SHA=${{ github.sha }},\
+ERROR_RATE_THRESHOLD=0.05,\
+ERROR_RATE_WINDOW_MINUTES=5,\
+LATENCY_P95_THRESHOLD_MS=2000,\
+DAILY_COST_THRESHOLD_USD=50.0" \
+            --set-secrets "\
+JWT_SECRET=jwt-secret:latest,\
+REFRESH_SECRET=refresh-secret:latest,\
+GOOGLE_SERVICE_ACCOUNT_JSON_BASE64=google-sa-json:latest,\
+FIGMA_API_TOKEN=figma-token:latest,\
+ANTHROPIC_API_KEY=anthropic-key:latest,\
+SHEETS_USERS_ID=sheets-users-id:latest,\
+SHEETS_TEMPLATES_ID=sheets-templates-id:latest,\
+SHEETS_JOBS_ID=sheets-jobs-id:latest,\
+SHEETS_AUDITLOGS_ID=sheets-auditlogs-id:latest"
+
+      - name: Get service URL
+        id: get-url
+        run: |
+          URL=$(gcloud run services describe ${{ env.SERVICE_NAME }} \
+            --region ${{ env.GCP_REGION }} \
+            --format 'value(status.url)')
+          echo "url=$URL" >> $GITHUB_OUTPUT
+          echo "Service URL: $URL"
+
+      - name: Health check
+        run: |
+          sleep 10
+          RESPONSE=$(curl -s ${{ steps.get-url.outputs.url }}/health)
+          echo "Health response: $RESPONSE"
+
+          # Check for exactly 3 keys (ok, version, git)
+          KEY_COUNT=$(echo "$RESPONSE" | jq 'keys | length')
+          if [ "$KEY_COUNT" -ne 3 ]; then
+            echo "❌ Health endpoint should return exactly 3 keys, got $KEY_COUNT"
+            exit 1
+          fi
+
+          OK=$(echo "$RESPONSE" | jq -r '.ok')
+          if [ "$OK" != "true" ]; then
+            echo "❌ Health check failed: ok=$OK"
+            exit 1
+          fi
+
+          echo "✅ Health check passed (3 keys: ok, version, git)"
+
+      - name: Create deployment summary
+        run: |
+          echo "## 🚀 Preview Deployment Successful" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "- **Service**: ${{ env.SERVICE_NAME }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Region**: ${{ env.GCP_REGION }}" >> $GITHUB_STEP_SUMMARY
+          echo "- **Image Tag**: \`${{ steps.set-tag.outputs.tag }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **Git SHA**: \`${{ github.sha }}\`" >> $GITHUB_STEP_SUMMARY
+          echo "- **API URL**: ${{ steps.get-url.outputs.url }}" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### Health Check" >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`json" >> $GITHUB_STEP_SUMMARY
+          curl -s ${{ steps.get-url.outputs.url }}/health | jq . >> $GITHUB_STEP_SUMMARY
+          echo "\`\`\`" >> $GITHUB_STEP_SUMMARY
+
+  build-and-deploy-frontend:
+    name: Build and Deploy Frontend to Firebase
+    runs-on: ubuntu-latest
+    needs: build-and-deploy-api
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install dependencies
+        run: |
+          cd frontend
+          npm ci
+
+      - name: Build frontend
+        env:
+          VITE_API_BASE: ${{ needs.build-and-deploy-api.outputs.api_url }}
+        run: |
+          cd frontend
+          npm run build
+
+      - name: Deploy to Firebase Preview
+        uses: FirebaseExtended/action-hosting-deploy@v0
+        with:
+          repoToken: ${{ secrets.GITHUB_TOKEN }}
+          firebaseServiceAccount: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          projectId: ${{ secrets.FIREBASE_PROJECT_ID }}
+          channelId: preview
+          entryPoint: frontend
+
+      - name: Add frontend URL to summary
+        run: |
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "### 🌐 Frontend Preview" >> $GITHUB_STEP_SUMMARY
+          echo "- **Test Dashboard**: [Open Test UI](/test)" >> $GITHUB_STEP_SUMMARY
+          echo "- **API Base**: ${{ needs.build-and-deploy-api.outputs.api_url }}" >> $GITHUB_STEP_SUMMARY
+
+  smoke-test:
+    name: Run Smoke Tests
+    runs-on: ubuntu-latest
+    needs: [build-and-deploy-api, build-and-deploy-frontend]
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Run smoke test script
+        env:
+          API_BASE: ${{ needs.build-and-deploy-api.outputs.api_url }}
+        run: |
+          bash scripts/smoke-test-updated.sh
+
+      - name: Upload smoke test results
+        if: always()
+        run: |
+          echo "## 🧪 Smoke Test Results" >> $GITHUB_STEP_SUMMARY
+          echo "" >> $GITHUB_STEP_SUMMARY
+          echo "Smoke tests completed. Check logs for details." >> $GITHUB_STEP_SUMMARY
+
+  notify:
+    name: Notify Deployment Status
+    runs-on: ubuntu-latest
+    needs: [build-and-deploy-api, build-and-deploy-frontend, smoke-test]
+    if: always()
+
+    steps:
+      - name: Deployment status
+        run: |
+          if [ "${{ needs.smoke-test.result }}" == "success" ]; then
+            echo "✅ Preview deployment successful - Ready for UAT"
+          else
+            echo "❌ Preview deployment had issues"
+            exit 1
+          fi
