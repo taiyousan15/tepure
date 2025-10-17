@@ -146,24 +146,8 @@ jobs:
             --min-instances 0 \
             --max-instances 5 \
             --timeout 60 \
-            --set-env-vars "\
-ENV=preview,\
-APP_VERSION=1.0.0-preview,\
-GIT_SHA=${{ github.sha }},\
-ERROR_RATE_THRESHOLD=0.05,\
-ERROR_RATE_WINDOW_MINUTES=5,\
-LATENCY_P95_THRESHOLD_MS=2000,\
-DAILY_COST_THRESHOLD_USD=50.0" \
-            --set-secrets "\
-JWT_SECRET=jwt-secret:latest,\
-REFRESH_SECRET=refresh-secret:latest,\
-GOOGLE_SERVICE_ACCOUNT_JSON_BASE64=google-sa-json:latest,\
-FIGMA_API_TOKEN=figma-token:latest,\
-ANTHROPIC_API_KEY=anthropic-key:latest,\
-SHEETS_USERS_ID=sheets-users-id:latest,\
-SHEETS_TEMPLATES_ID=sheets-templates-id:latest,\
-SHEETS_JOBS_ID=sheets-jobs-id:latest,\
-SHEETS_AUDITLOGS_ID=sheets-auditlogs-id:latest"
+            --set-env-vars "ENV=preview,APP_VERSION=1.0.0-preview,GIT_SHA=${{ github.sha }},ERROR_RATE_THRESHOLD=0.05,ERROR_RATE_WINDOW_MINUTES=5,LATENCY_P95_THRESHOLD_MS=2000,DAILY_COST_THRESHOLD_USD=50.0" \
+            --set-secrets "JWT_SECRET=jwt-secret:latest,REFRESH_SECRET=refresh-secret:latest,GOOGLE_SERVICE_ACCOUNT_JSON_BASE64=google-sa-json:latest,FIGMA_API_TOKEN=figma-token:latest,ANTHROPIC_API_KEY=anthropic-key:latest,SHEETS_USERS_ID=sheets-users-id:latest,SHEETS_TEMPLATES_ID=sheets-templates-id:latest,SHEETS_JOBS_ID=sheets-jobs-id:latest,SHEETS_AUDITLOGS_ID=sheets-auditlogs-id:latest"
 
       - name: Get service URL
         id: get-url
