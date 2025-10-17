@@ -4,7 +4,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: 'Docker image tag (default: preview-YYYYMMDD)'
+        description: 'Docker image tag to deploy (default: preview-YYYYMMDD)'
         required: false
         default: ''
 
